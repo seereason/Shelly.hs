@@ -23,7 +23,7 @@
 module Shelly
        (
          -- * Entering Sh.
-         Sh, ShIO, shelly, shellyNoDir, shellyFailDir, AsyncSh(asyncSh), sub
+         Sh, ShIO, shelly, shellyNoDir, shellyFailDir, shellyFailQuietly, AsyncSh(asyncSh), sub
          , silently, verbosely, escaping, print_stdout, print_stderr, print_commands
          , onCommandHandles
          , tracing, errExit
@@ -966,19 +966,23 @@ followSymlink enableFollowSymlink action = sub $ do
 
 
 defReadOnlyState :: ReadOnlyState
-defReadOnlyState = ReadOnlyState { rosFailToDir = False }
+defReadOnlyState = ReadOnlyState { rosFailureMessaging = FailToConsole }
 
 -- | Deprecated now, just use 'shelly', whose default has been changed.
 -- Using this entry point does not create a @.shelly@ directory in the case
 -- of failure. Instead it logs directly into the standard error stream (@stderr@).
 shellyNoDir :: MonadIO m => Sh a -> m a
-shellyNoDir = shelly' ReadOnlyState { rosFailToDir = False }
+shellyNoDir = shelly' ReadOnlyState { rosFailureMessaging = FailToConsole }
 {-# DEPRECATED shellyNoDir "Just use shelly. The default settings have changed" #-}
 
 -- | Using this entry point creates a @.shelly@ directory in the case
 -- of failure where errors are recorded.
 shellyFailDir :: MonadIO m => Sh a -> m a
-shellyFailDir = shelly' ReadOnlyState { rosFailToDir = True }
+shellyFailDir = shelly' ReadOnlyState { rosFailureMessaging = FailToDir }
+
+-- | Using this nothing is printed on exit.
+shellyFailQuietly :: MonadIO m => Sh a -> m a
+shellyFailQuietly = shelly' ReadOnlyState { rosFailureMessaging = FailQuietly }
 
 getNormalizedEnvironment :: IO [(String, String)]
 getNormalizedEnvironment =
@@ -1038,17 +1042,16 @@ shelly' ros action = do
     throwExplainedException :: Exception exception => exception -> Sh a
     throwExplainedException ex = get >>= errorMsg >>= liftIO . throwIO . ReThrownException ex
 
-    errorMsg st =
-      if not (rosFailToDir $ sReadOnly st) then ranCommands else do
+    errorMsg :: State -> Sh String
+    errorMsg st@(State {sReadOnly = ReadOnlyState {rosFailureMessaging = FailQuietly}}) = pure ""
+    errorMsg st@(State {sReadOnly = ReadOnlyState {rosFailureMessaging = FailToConsole}}) = ranCommands
+    errorMsg st@(State {sReadOnly = ReadOnlyState {rosFailureMessaging = FailToDir}}) = do
           d <- pwd
           sf <- shellyFile
           let logFile = d</>shelly_dir</>sf
-          (writefile logFile trc >> return ("log of commands saved to: " <> logFile))
+          (writefile logFile (sTrace st) >> return ("log of commands saved to: " <> logFile))
             `catchany_sh` (\_ -> ranCommands)
-
-      where
-        trc = sTrace st
-        ranCommands = return . mappend "Ran commands: \n" . T.unpack $ trc
+    ranCommands = get >>= return . mappend "Ran commands: \n" . T.unpack . sTrace
 
     shelly_dir = ".shelly"
     shellyFile = chdir_p shelly_dir $ do

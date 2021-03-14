@@ -14,7 +14,8 @@
 -- However, Shelly went back to exposing a single module
 module Shelly.Base
   (
-    Sh(..), ShIO, runSh, State(..), ReadOnlyState(..), StdHandle(..),
+    Sh(..), ShIO, runSh, State(..), StdHandle(..),
+    ReadOnlyState(..), FailureMessaging(..),
     HandleInitializer, StdInit(..),
     FilePath, Text,
     relPath, path, absPath, canonic, canonicalize,
@@ -102,7 +103,8 @@ instance Catch.MonadCatch Sh where
 runSh :: Sh a -> IORef State -> IO a
 runSh = runReaderT . unSh
 
-data ReadOnlyState = ReadOnlyState { rosFailToDir :: Bool }
+data FailureMessaging = FailToDir | FailToConsole | FailQuietly
+data ReadOnlyState = ReadOnlyState { rosFailureMessaging :: FailureMessaging }
 data State = State
    { sCode :: Int -- ^ exit code for command that ran
    , sStdin :: Maybe Text -- ^ stdin for the command to be run
