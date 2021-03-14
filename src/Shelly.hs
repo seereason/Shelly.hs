@@ -23,7 +23,7 @@
 module Shelly
        (
          -- * Entering Sh.
-         Sh, ShIO, shelly, shellyNoDir, shellyFailDir, asyncSh, sub
+         Sh, ShIO, shelly, shellyNoDir, shellyFailDir, AsyncSh(asyncSh), sub
          , silently, verbosely, escaping, print_stdout, print_stderr, print_commands
          , onCommandHandles
          , tracing, errExit
@@ -1516,10 +1516,13 @@ sleep :: Int -> Sh ()
 sleep = liftIO . threadDelay . (1000 * 1000 *)
 
 -- | spawn an asynchronous action with a copy of the current state
-asyncSh :: Sh a -> Sh (Async a)
-asyncSh proc = do
-  state <- get
-  liftIO $ async $ shelly (put state >> proc)
+class AsyncSh m where
+  asyncSh :: m a -> m (Async a)
+
+instance AsyncSh Sh where
+  asyncSh proc = do
+    state <- get
+    liftIO $ async $ shelly (put state >> proc)
 
 -- helper because absPath can throw exceptions
 -- This helps give clear tracing messages
